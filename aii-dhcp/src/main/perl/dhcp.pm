@@ -60,6 +60,15 @@ sub restart_daemon {
 
 }
 
+sub check_existing_mac {
+    my ($text, $mac) = @_;
+    $this_app->debug(1, 'Checking for existing mac');
+    my $mac_regex = '\\n\s*host\s+(\S+)\s*\{[^}]*hardware ethernet ' . $mac . ';[^}]*\}';
+    while ($text =~ m/$mac_regex/mg){
+        $this_app->warn("Mac address $mac already exits in config for $1");
+    }
+};
+
 #
 # update_dhcp_config_file($text, $ntc, $ntr)
 #
@@ -136,6 +145,7 @@ sub update_dhcp_config_file {
                 push @newnodes, "\n".$indent."host $node->{NAME} {  # added by aii-dhcp";
         
                 foreach $mac (split(' ', $node->{MAC})) {
+                    check_existing_mac($text, $mac);
                     push @newnodes, "$indent\t  hardware ethernet $mac;";
                 }
         
