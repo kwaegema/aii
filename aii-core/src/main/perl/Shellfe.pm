@@ -700,12 +700,6 @@ sub fetch_profiles
     }
     return %h;
 }
-
-# Initiate the Parallel:ForkManager with requested threads if option is given
-sub init_pm {
-    my ($self, $cmd, $responses) = @_;
-    if ($self->option('threads')) {
-        my $pm = Parallel::ForkManager->new($self->option('threads'));
         $pm->run_on_finish ( # called before the first call to start()
             sub {
                 my ($pid, $exit_code, $id, $esignal, $cdump, $data_struct_ref) = @_;
@@ -717,9 +711,13 @@ sub init_pm {
                     $responses->{$id} = $data_struct_ref;
                     $self->debug(5, "Running $cmd on $id had output"); 
                 }
-            }
-        );
-        return $pm;
+
+# Initiate the Parallel:ForkManager with requested threads if option is given
+sub init_pm {
+    my ($self, $cmd, $responses) = @_;
+    if ($self->option('threads')) {
+        my $sem = Thread::Semaphore->new($self->option('threads'));
+        return $sem;
     } else {
         return 0;
     }
