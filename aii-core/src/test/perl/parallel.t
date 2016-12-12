@@ -16,7 +16,7 @@ use Readonly;
 
 $CAF::Object::NoAction = 1;
 
-my $mock = Test::MockModule->new('AII::Shellfe');
+my $caflock = Test::MockModule->new('CAF::Lock');
 my $cfg_basic = get_config_for_profile('basic');
 my $config_basic = { configuration => $cfg_basic };
 my %h = (
@@ -25,8 +25,18 @@ my %h = (
     'test03.cluster' => $config_basic,
     'test04.cluster' => $config_basic,
 );
+my $defres = {};
+foreach my $host (keys %h) {
+	$defres->{$host} = {
+    	'ec' => 0,
+    	'mode' => 0,
+    	'node' => $host,
+	};
+};
 
+$caflock->mock('set_lock', 1 );
 my @opts = qw(script --logfile=target/test/parallel.log --cfgfile=src/test/resources/parallel.cfg);
+
 
 
 my $mod = AII::Shellfe->new(@opts);
@@ -34,28 +44,48 @@ my $mod = AII::Shellfe->new(@opts);
 my ($pm, %responses) = $mod->init_pm('test');
 ok(!$pm, 'parallel fork manager not initiated');
 
-my $ok = $mod->status(%h);
-diag explain $ok;
 
-$ok = $mod->install(%h);
-diag explain $ok;
+foreach my $host (keys %h) {
+	$defres->{$host}->{method} = '_remove';
+};
 
-
+my $ok = $mod->remove(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
 
 $mod = AII::Shellfe->new(@opts, "--threads", 2 );
 ($pm, %responses) = $mod->init_pm('test');
 ok($pm, 'parallel fork manager initiated');
 
-$ok = $mod->status(%h);
-diag explain $ok;
-ok($ok, 'ok is ok');
+foreach my $host (keys %h) {
+	$defres->{$host}->{mode} = 1;
+};
+$ok = $mod->remove(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
 
-#@hosts_to_cfg = sort(keys(%res));
-#cmp_deeply( \@hosts_to_cfg, \@ALL_HOSTS, 'correct confirmation given' ) ;
+foreach my $host (keys %h) {
+	$defres->{$host}->{method} = '_status';
+};
+$ok = $mod->status(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
+
 
 $mod = AII::Shellfe->new(@opts, "--threads", 4 );
-$ok = $mod->status(%h);
-diag explain $ok;
+($pm, %responses) = $mod->init_pm('test');
+ok($pm, 'parallel fork manager initiated');
 
+$ok = $mod->status(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
+
+foreach my $host (keys %h) {
+	$defres->{$host}->{method} = '_configure';
+};
+$ok = $mod->configure(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
+
+foreach my $host (keys %h) {
+	$defres->{$host}->{method} = '_install';
+};
+$ok = $mod->install(%h);
+cmp_deeply( $ok, $defres, 'correct result' ) ;
 
 done_testing();

@@ -701,22 +701,23 @@ sub fetch_profiles
     return %h;
 }
 
+# Initiate the Parallel:ForkManager with requested threads if option is given
 sub init_pm {
     my ($self, $cmd, $responses) = @_;
     if ($self->option('threads')) {
         my $pm = Parallel::ForkManager->new($self->option('threads'));
-		$pm->run_on_finish ( # called BEFORE the first call to start()
-    	    sub {
-      			my ($pid, $exit_code, $id, $esignal, $cdump, $data_struct_ref) = @_;
-				if ($exit_code) {
-					$self->error("Error running $cmd on $id, exitcode $exit_code");
-				};
-      			# retrieve data structure from child 
-      			if (defined($data_struct_ref)) {
-					$responses->{$id} = $data_struct_ref;
-        			$self->debug(5, "Running $cmd on $id had output"); 
-        		}
-      		}
+        $pm->run_on_finish ( # called before the first call to start()
+            sub {
+                my ($pid, $exit_code, $id, $esignal, $cdump, $data_struct_ref) = @_;
+                if ($exit_code) {
+                    $self->error("Error running $cmd on $id, exitcode $exit_code");
+                };
+                # retrieve data structure from child 
+                if (defined($data_struct_ref)) {
+                    $responses->{$id} = $data_struct_ref;
+                    $self->debug(5, "Running $cmd on $id had output"); 
+                }
+            }
         );
         return $pm;
     } else {
@@ -741,18 +742,14 @@ foreach my $cmd (COMMANDS) {
                     next;
                 };
             };
-			$self->debug(5, "Going to start $cmd on node $node");
-            if ($pm) {
+            $self->debug(5, "Going to start $cmd on node $node");
+            if ($pm) { # start parallel execution in child
                 $pm->start($node) and next;
             }
 
             my $ec = $self->$method($node, $node_states{$node}) || 0;
-            my $res = { 
-                ec => $ec,
-                method => $method,
-                node => $node,
-                mode => $pm ? 1 : 0 ,
-            };
+            my $res = { ec => $ec, method => $method, node => $node, mode => $pm ? 1 : 0 };
+
             if ($pm) {
                 $pm->finish($ec, $res ); # Terminates the child process
             } else {
@@ -760,7 +757,7 @@ foreach my $cmd (COMMANDS) {
             }
         };
         $pm->wait_all_children if $pm;
-		$self->debug(2, "Ran $cmd for all requested nodes");
+        $self->debug(2, "Ran $cmd for all requested nodes");
         return \%responses;
     }
 }
