@@ -30,7 +30,8 @@ use File::Path qw(mkpath rmtree);
 use File::Basename qw(basename);
 use DB_File;
 use Readonly;
-use Parallel::ForkManager 0.7.6;
+use threads;
+use Thread::Semaphore;
 our $profiles_info = undef;
 
 use constant MODULEBASE => 'NCM::Component::';
@@ -492,6 +493,7 @@ sub iter_plugins
     foreach my $plug (qw(osinstall nbp discovery)) {
         my $path = "/system/aii/$plug";
         if (!$self->option("no$plug")) {
+            $self->debug(1, "Run plugin $plug");
             $self->run_plugin($st, $path, $hook);
         }
     }
@@ -700,19 +702,8 @@ sub fetch_profiles
     }
     return %h;
 }
-        $pm->run_on_finish ( # called before the first call to start()
-            sub {
-                my ($pid, $exit_code, $id, $esignal, $cdump, $data_struct_ref) = @_;
-                if ($exit_code) {
-                    $self->error("Error running $cmd on $id, exitcode $exit_code");
-                };
-                # retrieve data structure from child 
-                if (defined($data_struct_ref)) {
-                    $responses->{$id} = $data_struct_ref;
-                    $self->debug(5, "Running $cmd on $id had output"); 
-                }
 
-# Initiate the Parallel:ForkManager with requested threads if option is given
+# Initiate a parallel manager with requested threads if option is given
 sub init_pm {
     my ($self, $cmd, $responses) = @_;
     if ($self->option('threads')) {
@@ -722,6 +713,35 @@ sub init_pm {
         return 0;
     }
 }
+
+sub meta_method {
+    my ($self, $method, $node, $node_states, $pm) = @_;
+    
+    my $ec = $self->$method($node, $node_states->{$node}) || 0;
+    my $res = { ec => $ec, method => $method, node => $node, mode => $pm ? 1 : 0 }; 
+
+    sleep 1;
+    if ($pm) {
+        $self->debug(2, "thread for node $node finished, Sema up");
+        $pm->up();
+    }
+    return $res;
+};
+
+sub collect_responses {
+    my ($self, $responses) = @_;
+    $self->debug(2, 'Collecting responses of threads'); 
+    my @threads = threads->list();
+    $self->debug(2, "Number of threads: ", scalar threads->list());
+    foreach my $thr (@threads) {
+        $self->debug(2, "Joining for", $thr->tid());
+        my $res = $thr->join();
+        $self->debug(2, "Running $res->{method} on $res->{node} had output"); 
+        $responses->{$res->{node}} = $res;
+    }
+    $self->debug(2, 'Collected responses'); 
+    
+}
     
 # Wrapper to execute the commands in sorted manner
 no strict 'refs';
@@ -730,7 +750,7 @@ foreach my $cmd (COMMANDS) {
         my ($self, %node_states) = @_;
         my $method = "_$cmd";
         my %responses = ();
-        my $pm = $self->init_pm($cmd, \%responses);
+        my $pm = $self->init_pm();
         foreach my $node (sort keys %node_states) {
             $self->debug (2, "$cmd: $node");
             if ($cmd ne 'status') {
@@ -740,21 +760,17 @@ foreach my $cmd (COMMANDS) {
                     next;
                 };
             };
-            $self->debug(5, "Going to start $cmd on node $node");
             if ($pm) { # start parallel execution in child
-                $pm->start($node) and next;
-            }
-
-            my $ec = $self->$method($node, $node_states{$node}) || 0;
-            my $res = { ec => $ec, method => $method, node => $node, mode => $pm ? 1 : 0 };
-
-            if ($pm) {
-                $pm->finish($ec, $res ); # Terminates the child process
+                $self->debug(2, "waiting to start $cmd for node $node");
+                $pm->down();
+                $self->debug(2, "Sema down, starting $cmd for node $node");
+                my $thr = threads->create(\&meta_method, $self, $method, $node, \%node_states, $pm);
             } else {
+                my $res = $self->meta_method($method, $node, \%node_states, $pm);
                 $responses{$node} = $res;
             }
         };
-        $pm->wait_all_children if $pm;
+        $self->collect_responses(\%responses) if $pm;
         $self->debug(2, "Ran $cmd for all requested nodes");
         return \%responses;
     }
@@ -820,6 +836,9 @@ sub _remove
         }
         $self->remove_cache_node($node) unless $self->option('noaction');
     };
+   
+    $self->debug(2, "Done reinstall for $node");
+    return 0;    
 }
 
 # Runs the Rescue method of the NBP plugins of the nodes given as

@@ -42,7 +42,7 @@ my @opts = qw(script --logfile=target/test/parallel.log --cfgfile=src/test/resou
 my $mod = AII::Shellfe->new(@opts);
 
 my ($pm, %responses) = $mod->init_pm('test');
-ok(!$pm, 'parallel fork manager not initiated');
+ok(!$pm, 'parallel manager not initiated');
 
 
 foreach my $host (keys %h) {
@@ -54,12 +54,13 @@ cmp_deeply( $ok, $defres, 'correct result' ) ;
 
 $mod = AII::Shellfe->new(@opts, "--threads", 2 );
 ($pm, %responses) = $mod->init_pm('test');
-ok($pm, 'parallel fork manager initiated');
+ok($pm, 'parallel manager initiated');
 
 foreach my $host (keys %h) {
 	$defres->{$host}->{mode} = 1;
 };
 $ok = $mod->remove(%h);
+diag explain $ok;
 cmp_deeply( $ok, $defres, 'correct result' ) ;
 
 foreach my $host (keys %h) {
