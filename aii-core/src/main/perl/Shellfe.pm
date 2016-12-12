@@ -229,8 +229,8 @@ sub app_options
          HELP    => 'where to store lock files',
          DEFAULT => "/var/lock/quattor" },
 
-       { NAME    => 'threads=i',
-         HELP    => 'run commands on hosts in seperate threads ',
+       { NAME    => 'parallel=i',
+         HELP    => 'run commands on hosts in parallel ',
          DEFAULT => 0 },
 
          # Options for osinstall plug-ins
@@ -704,8 +704,8 @@ sub fetch_profiles
 # Initiate the Parallel:ForkManager with requested threads if option is given
 sub init_pm {
     my ($self, $cmd, $responses) = @_;
-    if ($self->option('threads')) {
-        my $pm = Parallel::ForkManager->new($self->option('threads'));
+    if ($self->option('parallel')) {
+        my $pm = Parallel::ForkManager->new($self->option('parallel'));
         $pm->run_on_finish ( # called before the first call to start()
             sub {
                 my ($pid, $exit_code, $id, $esignal, $cdump, $data_struct_ref) = @_;
